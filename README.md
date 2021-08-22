@@ -1,1 +1,1 @@
-# End-To-End-Messaging-System
+# End-To-End Encrypted Messaging System
