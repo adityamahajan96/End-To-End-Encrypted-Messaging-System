@@ -28,8 +28,21 @@ def receive():
 		try:
 			msg = client.recv(1024).decode('utf-8')
 			if len(msg) > 0:
-				print(msg)
-			
+				msgtype = msg[:6]
+				msg = msg[6:]
+				if msgtype == '~CHAT~':
+					print(msg)
+				
+				elif msgtype == '~JOIN~':
+					split_msg = msg.split('~')
+					user = split_msg[0]
+					group = split_msg[1]
+					print(f"User {user} wants to join group {group}. Press 'A' to accept, any other key to reject.")
+					res = input()
+					client.send(res.encode('utf-8'))
+					print("Sent confirmation")
+						
+				
 		except Exception as e:
 			print("Error:",e)
 			client.close()
@@ -44,18 +57,32 @@ def chat():
 			nickname = split_msg[1]
 		
 		if split_msg[0] == 'SEND':
-			message = split_msg[2:]
-			print("<"+nickname+">: ", "".join(message))
+			if split_msg[1] == 'GROUP':
+				message = split_msg[3:]
+					
+			else:
+				message = split_msg[2:]
+				
+			print("<"+nickname+">: ", " ".join(message))
 		
 		#msg = f'{nickname}: {input("")}'
 		client.send(msg.encode('utf-8'))
 		recvd_msg = client.recv(1024).decode('utf-8')
-		rcv = recvd_msg.split()
-		"""if rcv[0] == '<CHAT>':
-			print(rcv[1] + ": ", rcv[2:])
-			continue"""
+		#rcv = recvd_msg.split('~')
+		if len(recvd_msg) > 6 and recvd_msg[:6] == '~CHAT~':
+			print(recvd_msg[6:])
 		
-		print("<Server>: "+ recvd_msg)
+		elif len(recvd_msg) > 6 and recvd_msg[:6] == '~JOIN~':
+			split_msg = recvd_msg.split('~')
+			user = split_msg[0]
+			group = split_msg[1]
+			print(f"User {user} wants to join group {group}. Press 'A' to accept, any other key to reject.")
+			res = input()
+			client.send(res.encode('utf-8'))
+			print("Sent confirmation")
+			
+		else:
+			print("<Server>: "+ recvd_msg)
 
 
 chat_thread = threading.Thread(target=chat)

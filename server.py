@@ -20,29 +20,113 @@ server.listen()
 
 clients = {}
 client_creds = {}
+groups = {} #In the format: grp_name: {owner: [group_members,...]}
+user_groups = {} #In the format: username: [list of groups]
 
-def send_fun(receiver,msg,client_sender):
-	sender = ""
-	for user,client in clients.items():
-		if client == client_sender:
-			sender = user
-			break
-			
-	print(sender+" sending a message to "+receiver)
-	client_receiver = clients[receiver]
+def send_fun(sender,receiver,msg,client_sender,groupname=""):
+	print(sender, receiver, groupname)
+	if len(groupname) > 0:
+		print(groupname)
+		print(groups)
+		if groupname not in groups:
+			print(groupname)
+			print(groups)
+			client_sender.send("No such group!".encode('utf-8'))
+			return
+	
+	elif receiver not in clients:
+		client_sender.send("No such recipient!".encode('utf-8'))
+		return
+		
+	print(sender+" sending a message to "+receiver+" "+groupname)
 	#print(client_sender, type(client_sender))
 	#print(client_receiver, type(client_receiver))
 	#print("<"+sender+">: "+msg)
-	chat = "<"+sender+">: "+msg
+	chat = "~CHAT~"+"<"+sender+">: "+msg
 	#print(chat.encode('utf-8'))
-	client_receiver.send(chat.encode('utf-8'))
 	
+	if receiver == 'GROUP':
+		for user,groupnames in user_groups.items():
+			if user == sender:
+				for group in groupnames:
+					if group == groupname:
+						members = list(groups[group].values())[0]
+						for member in members:
+							if member == sender:
+								continue
+								
+							print("Group chat sending to member: ", member)
+							clients[member].send(chat.encode('utf-8'))
+							
+		return
+		
+		
 	if receiver == 'BROADCAST':
 		for user,client_receiver in clients.items():
 			client_receiver.send(chat.encode('utf-8'))
 			break
+		
+		return
 	
+	client_receiver = clients[receiver]
+	client_receiver.send(chat.encode('utf-8'))
 	client_sender.send("Message sent!".encode('utf-8'))
+	
+def create_group(username, client_sender, group_name):
+	if group_name in groups:
+		client_sender.send('Group already exists! Choose a different name.'.encode('utf-8'))
+		return
+	
+	temp = {}
+	temp[username] = [username]
+	groups[group_name] = temp
+	
+	if username in user_groups:
+		user_groups[username].append(group_name)
+	else:
+		user_groups[username] = [group_name]
+		
+	print(f'Group {group_name} successfully created by {username}!')
+	client_sender.send(f'Group {group_name} successfully created!'.encode('utf-8'))
+	
+	
+def join_group(username, client_sender, group_name):
+	if group_name not in groups:
+		create_group(username, client_sender, group_name)
+		#client_sender.send(f'New group {group_name} created!'.encode('utf-8'))
+		return
+	
+	owner = list(groups[group_name].keys())[0]
+	try:
+		req = "~JOIN~"+username+"~"+group_name+"~"
+		clients[owner].send(req.encode('utf-8'))
+		#print(clients[owner])
+		res = clients[owner].recv(1024).decode('utf-8')
+		print(res)
+		if res == 'A':
+			#Approved
+			print("Entered")
+			print(groups[group_name])
+			print(dict(groups[group_name])[owner])
+			print(groups[group_name][owner])
+			groups[group_name][owner].append(username)
+			print("No issue")
+			print(groups[group_name][owner])
+			if username in user_groups:
+				user_groups[username].append(group_name)
+			
+			else:
+				user_groups[username] = [group_name]
+				
+			print(user_groups[username])
+			print("No issue")
+			client_sender.send(f'You are added to group {group_name}!'.encode('utf-8'))
+		
+		else:
+			#Rejected
+			client_sender.send(f'Your request to join group {group_name} was rejected!'.encode('utf-8'))
+	except:
+		client_sender.send("Some issue occured. User cannot join the group".encode('utf-8'))
 		
 def signup(username, password, client):
 	try:
@@ -97,10 +181,31 @@ def handle(client):
 				if not logged_in:
 					client.send("Please log in".encode('utf-8'))
 					continue
+					
+				if msg[1] == 'GROUP':
+					groupname = msg[2]
+					message = " ".join(msg[3:])
+					print(groupname, message)
+					send_fun(user, "GROUP", message, client, groupname=groupname)
+					continue
 				
-				username = msg[1]
-				message = "".join(msg[2:])
-				send_fun(username, message, client)
+				receiver = msg[1]
+				message = " ".join(msg[2:])
+				send_fun(user, receiver, message, client)
+				
+			if msg[0] == 'CREATE':
+				if not logged_in:
+					client.send("Please log in".encode('utf-8'))
+					continue
+					
+				create_group(user, client, msg[1])
+				
+			if msg[0] == 'JOIN':
+				if not logged_in:
+					client.send("Please log in".encode('utf-8'))
+					continue
+				
+				join_group(user, client, msg[1])
 				
 			#broadcast(msg)
 		
