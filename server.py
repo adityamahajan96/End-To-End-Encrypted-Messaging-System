@@ -1,6 +1,12 @@
 import socket
 import threading
 import sys
+import tqdm
+import os
+from Crypto.Cipher import DES3
+from Crypto import Random
+from random import randint
+from time import *
 
 HOST = ""
 PORT = ""
@@ -58,6 +64,7 @@ def send_fun(sender,receiver,msg,client_sender,groupname=""):
 							print("Group chat sending to member: ", member)
 							clients[member].send(chat.encode('utf-8'))
 							
+		client_sender.send("Message sent!".encode('utf-8'))
 		return
 		
 		
@@ -105,21 +112,14 @@ def join_group(username, client_sender, group_name):
 		print(res)
 		if res == 'A':
 			#Approved
-			print("Entered")
-			print(groups[group_name])
-			print(dict(groups[group_name])[owner])
-			print(groups[group_name][owner])
 			groups[group_name][owner].append(username)
-			print("No issue")
-			print(groups[group_name][owner])
+			
 			if username in user_groups:
 				user_groups[username].append(group_name)
 			
 			else:
 				user_groups[username] = [group_name]
 				
-			print(user_groups[username])
-			print("No issue")
 			client_sender.send(f'You are added to group {group_name}!'.encode('utf-8'))
 		
 		else:
@@ -127,6 +127,59 @@ def join_group(username, client_sender, group_name):
 			client_sender.send(f'Your request to join group {group_name} was rejected!'.encode('utf-8'))
 	except:
 		client_sender.send("Some issue occured. User cannot join the group".encode('utf-8'))
+		
+		
+def leave_group(username, client_sender, group_name):
+	if group_name not in groups:
+		client_sender.send(f'No such group exists!'.encode('utf-8'))
+		return
+	
+	try:
+		for grp in user_groups[username]:
+			if grp == group_name:
+				user_groups[username].remove(grp)
+				break
+				
+		for owner, members in groups[group_name]:
+			for member in members:
+				if member == username:
+					members.remove(member)
+					client_sender.send(f'Removed from group {group_name}!'.encode('utf-8'))
+					return
+					
+	except:
+		client_sender.send('Some error occured!'.encode('utf-8'))
+		
+
+def list_groups(client_sender):
+	import json
+	groups_str = json.dumps(groups)
+	client_sender.send(groups_str.encode('utf-8'))
+	
+
+def send_file(filename, receiver, filesize):
+	client_receiver = clients[receiver]
+	msg = "~FILE~"+filename+"~"+str(filesize)
+	#print("Filesize:", os.path.getsize(filename))
+	print(f"Sending file {filename} to {receiver}")
+	client_receiver.send(msg.encode('utf-8'))
+
+	#progress = tqdm.tqdm(range(filesize), f"Sending {filename}", unit="B", unit_scale=True, unit_divisor=1024)
+	with open(filename, "rb") as f:
+		while True:
+			bytes_read = f.read(4096)
+			if not bytes_read:
+				client_receiver.shutdown(socket.SHUT_WR)
+				break
+						
+			client_receiver.sendall(bytes_read)
+			#progress.update(len(bytes_read))
+	
+	os.remove(filename)
+			
+	print(f"File {filename} sent!")
+	
+	
 		
 def signup(username, password, client):
 	try:
@@ -206,6 +259,50 @@ def handle(client):
 					continue
 				
 				join_group(user, client, msg[1])
+				
+			if msg[0] == 'LEAVE':
+				if not logged_in:
+					client.send("Please log in".encode('utf-8'))
+					continue
+				
+				leave_group(user, client, msg[1])
+				
+			if msg[0] == 'LIST':
+				if not logged_in:
+					client.send("Please log in".encode('utf-8'))
+					continue
+					
+				list_groups(client)
+				
+			if msg[0] == 'SENDFILE':
+				print("File to server")
+				if not logged_in:
+					client.send("Please log in".encode('utf-8'))
+					continue
+				
+				else:
+					client.send('Y'.encode('utf-8'))
+				
+				print("Receiving file")
+				filename = msg[1]
+				receiver = msg[2]
+				filesize = int(msg[3])
+				
+				#progress = tqdm.tqdm(range(filesize), f"Receiving {filename}", unit="B", unit_scale=True, unit_divisor=1024)
+				print("Start receiving..")
+				with open(filename, "wb") as f:
+					while True:
+						bytes_read = client.recv(4096)
+						print("Received", bytes_read)
+						if not bytes_read:
+							break
+							
+						f.write(bytes_read)
+						#progress.update(len(bytes_read))
+				
+				print("Received file")
+				send_file(filename, receiver, filesize)
+				
 				
 			#broadcast(msg)
 		

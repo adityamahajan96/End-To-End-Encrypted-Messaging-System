@@ -2,6 +2,8 @@ import socket
 import select
 import sys
 import threading
+import os
+import tqdm
 
 HOST = ""
 PORT = ""
@@ -21,9 +23,10 @@ client.connect((HOST, PORT))
 print("Connected to server!")
 #nickname = input("Please enter your username:")
 nickname = ""
-
-
+SEPARATOR = "<SEPARATOR>"
+	
 def receive():
+
 	while True:
 		try:
 			msg = client.recv(1024).decode('utf-8')
@@ -37,11 +40,28 @@ def receive():
 					split_msg = msg.split('~')
 					user = split_msg[0]
 					group = split_msg[1]
-					print(f"User {user} wants to join group {group}. Press 'A' to accept, any other key to reject.")
-					res = input()
+					#print(f"User {user} wants to join group {group}. Press 'A' to accept, any other key to reject.")
+					#res = input("")
+					res = 'A'
 					client.send(res.encode('utf-8'))
-					print("Sent confirmation")
+					print("Response sent")
+					
+				elif msgtype == '~FILE~':
+					split_msg = msg.split('~')
+					filename = split_msg[0]
+					filesize = int(split_msg[1])
+					
+					#progress = tqdm.tqdm(range(filesize), f"Receiving {filename}", unit="B", unit_scale=True, unit_divisor=1024)
+					with open(filename, "wb") as f:
+						bytes_read = client.recv(4096)
+						if not bytes_read:
+							break
 						
+						f.write(bytes_read)
+						#progress.update(len(bytes_read))
+							
+					print("File received")			
+					
 				
 		except Exception as e:
 			print("Error:",e)
@@ -51,7 +71,10 @@ def receive():
 def chat():
 	global nickname
 	while True:
-		msg = input("")
+		msg = input("Enter your command: ")
+		if len(msg) == 0:
+			continue
+			
 		split_msg = msg.split()
 		if split_msg[0]== 'SIGNUP':
 			nickname = split_msg[1]
@@ -64,6 +87,37 @@ def chat():
 				message = split_msg[2:]
 				
 			print("<"+nickname+">: ", " ".join(message))
+			
+		if split_msg[0] == 'SENDFILE':
+			filename = split_msg[1]
+			filesize = os.path.getsize(filename)
+			print("Filesize:", filesize)
+			
+			msg = msg+" "+str(filesize)
+			client.send(msg.encode('utf-8'))
+			res = client.recv(1024).decode('utf-8')
+			if res != 'Y':
+				print(res)
+				continue
+				
+
+			#progress = tqdm.tqdm(range(filesize), f"Sending {filename}", unit="B", unit_scale=True, unit_divisor=1024)
+			with open(filename, "rb") as f:
+				while True:
+					bytes_read = f.read(4096)
+					#print("Sending", bytes_read)
+					if not bytes_read:
+						client.shutdown(socket.SHUT_WR)
+						break
+						
+					client.sendall(bytes_read)
+					#progress.update(len(bytes_read))
+
+				
+			print(f"File {filename} sent!")
+			
+			continue
+			
 		
 		#msg = f'{nickname}: {input("")}'
 		client.send(msg.encode('utf-8'))
@@ -77,9 +131,9 @@ def chat():
 			user = split_msg[0]
 			group = split_msg[1]
 			print(f"User {user} wants to join group {group}. Press 'A' to accept, any other key to reject.")
-			res = input()
+			res = input("")
 			client.send(res.encode('utf-8'))
-			print("Sent confirmation")
+			print("Response sent")
 			
 		else:
 			print("<Server>: "+ recvd_msg)
